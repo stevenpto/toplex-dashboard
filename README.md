@@ -2,6 +2,8 @@
 
 Letterboxd-style analytics dashboard for your Plex server.
 
+![Dashboard screenshot](docs/screenshot.png)
+
 ## Stack
 
 - **Backend** — FastAPI + plexapi (Python)
@@ -57,10 +59,14 @@ sent to the browser.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/users` | Server accounts |
-| GET | `/users/{id}/recent?limit=4` | Last N watched items |
-| GET | `/analytics/top-movies?range=7d&limit=4` | Most-watched this period |
-| GET | `/proxy/image?path=...` | Proxied poster image |
+| GET | `/users` | All server accounts derived from watch history |
+| GET | `/users/{id}/recent?limit=4` | Last N movies watched by a user |
+| GET | `/analytics/top-movies?range=7d&limit=4` | Most-watched movies this period |
+| GET | `/analytics/stats` | YTD stats: films added, watches, hours, active users |
+| GET | `/analytics/charts` | Weekly watch counts + day-of-week breakdown (YTD) |
+| GET | `/analytics/activity?limit=20` | Live feed: recent watches + library additions |
+| GET | `/movie/info?movie_id=...` | Full movie metadata from Plex (genres, cast, director, rating) |
+| GET | `/proxy/image?path=...` | SSRF-safe proxy for Plex poster images |
 
 Responses are cached in-memory for 60 seconds.
 
