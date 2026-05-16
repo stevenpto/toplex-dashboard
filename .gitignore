@@ -31,3 +31,6 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+backend.tar
+frontend.tar
+plex-letterbox.tar

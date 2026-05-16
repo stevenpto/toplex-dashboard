@@ -15,11 +15,14 @@ load_dotenv()
 PLEX_BASE_URL: str = os.getenv("PLEX_BASE_URL", "")
 PLEX_TOKEN: str = os.getenv("PLEX_TOKEN", "")
 
+_cors_origins_raw = os.getenv("CORS_ORIGINS", "http://localhost:5173")
+CORS_ORIGINS: list[str] = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+
 app = FastAPI(title="Plex Analytics API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET"],
     allow_headers=["*"],
@@ -433,6 +436,405 @@ async def get_movie_info(movie_id: str = Query(..., min_length=1)):
     _cache_set(cache_key, result)
     return result
 
+
+# ---------------------------------------------------------------------------
+# TV helpers (blocking – run via asyncio.to_thread)
+# ---------------------------------------------------------------------------
+
+_TV_HISTORY_CACHE_KEY = "all_tv_history"
+
+
+def _fetch_all_tv_history() -> list:
+    """Fetch episode-only history for ALL users, limited to the last 30 days."""
+    cached = _cache_get(_TV_HISTORY_CACHE_KEY)
+    if cached is not None:
+        return cached
+
+    plex = _get_plex()
+    mindate = datetime.now() - timedelta(days=HISTORY_DAYS)
+
+    try:
+        raw = plex.history(mindate=mindate)
+    except Exception:
+        raw = []
+
+    history = [item for item in raw if getattr(item, "type", None) == "episode"]
+    _cache_set(_TV_HISTORY_CACHE_KEY, history)
+    return history
+
+
+def _fetch_tv_users() -> list:
+    """Derive users from TV watch history."""
+    plex = _get_plex()
+
+    name_map: dict = {}
+    try:
+        for acc in plex.systemAccounts():
+            if acc.id > 0:
+                name_map[str(acc.id)] = acc.name or f"User {acc.id}"
+    except Exception:
+        pass
+
+    history = _fetch_all_tv_history()
+    seen: dict = {}
+    for item in history:
+        aid = str(item.accountID)
+        if aid not in seen and item.accountID > 0:
+            seen[aid] = name_map.get(aid, f"User {aid}")
+
+    return [{"id": aid, "name": name} for aid, name in seen.items()]
+
+
+# ---------------------------------------------------------------------------
+# TV Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/tv/users")
+async def get_tv_users():
+    cached = _cache_get("tv_users")
+    if cached is not None:
+        return cached
+    try:
+        result = await asyncio.to_thread(_fetch_tv_users)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set("tv_users", result)
+    return result
+
+
+@app.get("/tv/users/{user_id}/recent")
+async def get_tv_recent(user_id: str, limit: int = 4):
+    def _fetch() -> list:
+        history = _fetch_all_tv_history()
+        user_history = [h for h in history if str(h.accountID) == user_id]
+        user_history.sort(key=lambda x: x.viewedAt, reverse=True)
+
+        # Deduplicate by show, keep most recent episode per show.
+        # Use grandparentTitle as the dedup key — grandparentRatingKey may be 0
+        # or absent for unmatched items, causing every episode to be treated as unique.
+        seen_shows: dict = {}
+        for item in user_history:
+            dedup_key = getattr(item, "grandparentTitle", None) or str(item.ratingKey)
+            if dedup_key not in seen_shows:
+                gp_key = getattr(item, "grandparentRatingKey", None)
+                show_id = str(gp_key) if gp_key else ""
+                seen_shows[dedup_key] = {
+                    "show_id": show_id,
+                    "title": getattr(item, "grandparentTitle", item.title),
+                    "viewed_at": item.viewedAt.isoformat(),
+                    "poster_path": getattr(item, "grandparentThumb", item.thumb),
+                }
+            if len(seen_shows) >= limit:
+                break
+
+        return list(seen_shows.values())
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return result
+
+
+@app.get("/tv/analytics/top-shows")
+async def get_top_shows(
+    time_range: str = Query(default="30d", alias="range"),
+    limit: int = 6,
+):
+    def _fetch() -> list:
+        days = int(re.sub(r"[^0-9]", "", time_range) or "7")
+        cutoff = datetime.now() - timedelta(days=days)
+        history = _fetch_all_tv_history()
+        filtered = [h for h in history if h.viewedAt >= cutoff]
+
+        # Use grandparentTitle as dedup key — grandparentRatingKey may be 0/absent.
+        counts: dict = {}
+        for item in filtered:
+            dedup_key = getattr(item, "grandparentTitle", None) or str(item.ratingKey)
+            if dedup_key not in counts:
+                gp_key = getattr(item, "grandparentRatingKey", None)
+                show_id = str(gp_key) if gp_key else ""
+                counts[dedup_key] = {
+                    "show_id": show_id,
+                    "title": getattr(item, "grandparentTitle", item.title),
+                    "poster_path": getattr(item, "grandparentThumb", item.thumb),
+                    "art_path": None,
+                    "count": 0,
+                }
+            counts[dedup_key]["count"] += 1
+
+        ranked = sorted(counts.values(), key=lambda x: x["count"], reverse=True)[:limit]
+
+        if ranked and ranked[0].get("show_id"):
+            plex = _get_plex()
+            try:
+                top_item = plex.fetchItem(int(ranked[0]["show_id"]))
+                ranked[0]["art_path"] = getattr(top_item, "art", None)
+            except Exception:
+                pass
+
+        return ranked
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    return result
+
+
+@app.get("/tv/analytics/stats")
+async def get_tv_stats():
+    cached = _cache_get("tv_stats")
+    if cached is not None:
+        return cached
+
+    def _fetch() -> dict:
+        plex = _get_plex()
+        now = datetime.now()
+        year_start = datetime(now.year, 1, 1)
+
+        try:
+            ytd_raw = plex.history(mindate=year_start)
+        except Exception:
+            ytd_raw = []
+        ytd = [h for h in ytd_raw if getattr(h, "type", None) == "episode"]
+
+        total_episodes = len(ytd)
+
+        # History items don't carry duration — build a map from library episodes.
+        duration_map: dict = {}
+        for section in plex.library.sections():
+            if section.type == "show":
+                try:
+                    for ep in section.searchEpisodes():
+                        dur = getattr(ep, "duration", None)
+                        if dur:
+                            duration_map[str(ep.ratingKey)] = dur
+                except Exception:
+                    pass
+        total_ms = sum(duration_map.get(str(h.ratingKey), 0) for h in ytd)
+        total_hours = round(total_ms / (1000 * 60 * 60))
+        active_users = len({str(h.accountID) for h in ytd if h.accountID > 0})
+
+        shows_added = 0
+        for section in plex.library.sections():
+            if section.type == "show":
+                try:
+                    for show in section.all():
+                        if getattr(show, "addedAt", None) and show.addedAt >= year_start:
+                            shows_added += 1
+                except Exception:
+                    pass
+
+        return {
+            "shows_added_this_year": shows_added,
+            "total_episodes_this_year": total_episodes,
+            "total_hours_watched": total_hours,
+            "active_users": active_users,
+        }
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set("tv_stats", result)
+    return result
+
+
+@app.get("/tv/analytics/activity")
+async def get_tv_activity(limit: int = 10):
+    cached = _cache_get(f"tv_activity:{limit}")
+    if cached is not None:
+        return cached
+
+    def _fetch() -> list:
+        plex = _get_plex()
+
+        name_map: dict = {}
+        try:
+            for acc in plex.systemAccounts():
+                if acc.id > 0:
+                    name_map[str(acc.id)] = acc.name or f"User {acc.id}"
+        except Exception:
+            pass
+
+        events: list = []
+
+        history = _fetch_all_tv_history()
+        for item in history:
+            user = name_map.get(str(item.accountID), f"User {item.accountID}")
+            show_title = getattr(item, "grandparentTitle", item.title)
+            ep_title = item.title
+            season = getattr(item, "parentIndex", None)
+            episode = getattr(item, "index", None)
+            ep_info = f"S{season:02d}E{episode:02d}" if season and episode else ""
+            events.append({
+                "type": "watch",
+                "title": show_title,
+                "subtitle": f"{ep_info} {ep_title}".strip(),
+                "user_name": user,
+                "poster_path": getattr(item, "grandparentThumb", item.thumb),
+                "timestamp": item.viewedAt.isoformat(),
+            })
+
+        for section in plex.library.sections():
+            if section.type == "show":
+                try:
+                    for show in section.recentlyAdded(maxresults=30):
+                        added_at = getattr(show, "addedAt", None)
+                        if added_at:
+                            events.append({
+                                "type": "added",
+                                "title": show.title,
+                                "subtitle": None,
+                                "user_name": None,
+                                "poster_path": getattr(show, "thumb", None),
+                                "timestamp": added_at.isoformat(),
+                            })
+                except Exception:
+                    pass
+
+        events.sort(key=lambda x: x["timestamp"], reverse=True)
+        return events[:limit]
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set(f"tv_activity:{limit}", result)
+    return result
+
+
+@app.get("/tv/analytics/charts")
+async def get_tv_charts():
+    cached = _cache_get("tv_charts")
+    if cached is not None:
+        return cached
+
+    def _fetch():
+        plex = _get_plex()
+        now = datetime.now()
+        year_start = datetime(now.year, 1, 1)
+
+        try:
+            raw = plex.history(mindate=year_start)
+        except Exception:
+            raw = []
+
+        history = [h for h in raw if getattr(h, "type", None) == "episode"]
+
+        weekly_map: dict = {}
+        by_day_map: dict = {i: 0 for i in range(7)}
+
+        for item in history:
+            d = item.viewedAt
+            iso_week = d.isocalendar()[1]
+            weekly_map[iso_week] = weekly_map.get(iso_week, 0) + 1
+            by_day_map[d.weekday()] += 1
+
+        weeks = [{"week": w, "count": weekly_map.get(w, 0)} for w in range(1, 53)]
+
+        episodes_logged = len(history)
+        months_elapsed = max(1, now.month)
+        weeks_elapsed = max(1, (now - year_start).days // 7)
+        avg_per_month = round(episodes_logged / months_elapsed, 1)
+        avg_per_week = round(episodes_logged / weeks_elapsed, 1)
+
+        day_labels = ["M", "T", "W", "T", "F", "S", "S"]
+        by_day = [{"label": day_labels[i], "count": by_day_map[i]} for i in range(7)]
+
+        return {
+            "weekly": weeks,
+            "stats": {
+                "films_logged": episodes_logged,
+                "avg_per_month": avg_per_month,
+                "avg_per_week": avg_per_week,
+            },
+            "by_day": by_day,
+        }
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set("tv_charts", result)
+    return result
+
+
+@app.get("/tv/show/info")
+async def get_show_info(
+    show_id: str = Query(default=""),
+    title: str = Query(default=""),
+):
+    if not show_id and not title:
+        raise HTTPException(status_code=400, detail="Provide show_id or title")
+    if show_id and not show_id.isdigit():
+        raise HTTPException(status_code=400, detail="show_id must be a numeric Plex rating key")
+
+    cache_key = f"show_info:{show_id or title}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    def _fetch():
+        plex = _get_plex()
+        s = None
+
+        if show_id and show_id.isdigit():
+            try:
+                s = plex.fetchItem(int(show_id))
+            except Exception:
+                pass
+
+        if s is None and title:
+            try:
+                results = plex.library.search(title=title, libtype="show")
+                if results:
+                    s = results[0]
+            except Exception:
+                pass
+
+        if s is None:
+            return None
+
+        genres = [g.tag for g in (getattr(s, "genres", None) or [])]
+        actors = [r.tag for r in (getattr(s, "roles", None) or [])[:6]]
+
+        try:
+            seasons = len(s.seasons())
+        except Exception:
+            seasons = None
+        episodes = getattr(s, "leafCount", None)
+
+        return {
+            "title": s.title,
+            "year": str(s.year) if getattr(s, "year", None) else None,
+            "poster": getattr(s, "thumb", None),
+            "description": getattr(s, "summary", None),
+            "genre": genres,
+            "seasons": seasons,
+            "episodes": episodes,
+            "rating": getattr(s, "rating", None),
+            "content_rating": getattr(s, "contentRating", None),
+            "actors": actors,
+            "studio": getattr(s, "studio", None),
+        }
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Show info failed: {exc}")
+
+    if result is None:
+        raise HTTPException(status_code=404, detail="Show not found")
+
+    _cache_set(cache_key, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Image proxy
+# ---------------------------------------------------------------------------
 
 @app.get("/proxy/image")
 async def proxy_image(path: str):

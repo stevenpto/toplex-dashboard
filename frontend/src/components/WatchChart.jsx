@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getCharts } from '../services/api'
+import { getCharts, getTVCharts } from '../services/api'
 
 function WeeklyBars({ weeks }) {
   const maxCount = Math.max(1, ...weeks.map(w => w.count))
@@ -47,18 +47,21 @@ function DayBars({ days }) {
   )
 }
 
-export default function WatchChart() {
+export default function WatchChart({ mode = 'movies' }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    getCharts()
+    setLoading(true)
+    setData(null)
+    const fetcher = mode === 'tv' ? getTVCharts : getCharts
+    fetcher()
       .then(d => { if (!cancelled) setData(d) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [mode])
 
   if (loading) {
     return (
@@ -95,7 +98,7 @@ export default function WatchChart() {
         <div className="chart-stat-group">
           <div className="chart-stat">
             <span className="chart-stat-num">{stats.films_logged}</span>
-            <span className="chart-stat-label">Films logged</span>
+            <span className="chart-stat-label">{mode === 'tv' ? 'Episodes logged' : 'Films logged'}</span>
           </div>
           <span className="chart-arrow">→</span>
           <div className="chart-stat">

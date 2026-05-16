@@ -1,24 +1,24 @@
 import { useState, useEffect } from 'react'
-import TopMovies from '../components/TopMovies'
+import TopShows from '../components/TopShows'
 import UserRow from '../components/UserRow'
 import HeroBanner from '../components/HeroBanner'
 import StatsBar from '../components/StatsBar'
 import ToplexLogo from '../components/ToplexLogo'
-import ActivityFeed from '../components/ActivityFeed'
+import TVActivityFeed from '../components/TVActivityFeed'
 import WatchChart from '../components/WatchChart'
-import { getUsers } from '../services/api'
+import { getTVUsers } from '../services/api'
 
-export default function Dashboard({ view, onSwitch }) {
+export default function TVDashboard({ view, onSwitch }) {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [topMovie, setTopMovie] = useState(null)
+  const [topShow, setTopShow] = useState(null)
 
   useEffect(() => {
     let cancelled = false
     async function load() {
       try {
-        const data = await getUsers()
+        const data = await getTVUsers()
         if (!cancelled) setUsers(data)
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -32,8 +32,8 @@ export default function Dashboard({ view, onSwitch }) {
 
   return (
     <div>
-      <HeroBanner movie={topMovie} />
-      <StatsBar />
+      <HeroBanner movie={topShow} />
+      <StatsBar mode="tv" />
 
       <div className="app">
         <header className="header">
@@ -57,8 +57,8 @@ export default function Dashboard({ view, onSwitch }) {
 
         <div className="content-layout">
           <main className="content-main">
-            <WatchChart />
-            <TopMovies onTopMovie={setTopMovie} />
+            <WatchChart mode="tv" />
+            <TopShows onTopShow={setTopShow} />
 
             <section className="users-section">
               <div className="section-header">
@@ -82,15 +82,14 @@ export default function Dashboard({ view, onSwitch }) {
               )}
 
               {users.map((user) => (
-                <UserRow key={user.id} user={user} />
+                <UserRow key={user.id} user={user} mode="tv" />
               ))}
             </section>
           </main>
 
-          <ActivityFeed />
+          <TVActivityFeed />
         </div>
       </div>
     </div>
   )
 }
-

@@ -29,3 +29,28 @@ export const getCharts = () =>
 
 export const getMovieInfo = (movieId) =>
   apiFetch(`/movie/info?movie_id=${encodeURIComponent(movieId)}`)
+
+export const getTVUsers = () =>
+  apiFetch('/tv/users')
+
+export const getTVUserRecent = (userId, limit = 4) =>
+  apiFetch(`/tv/users/${encodeURIComponent(userId)}/recent?limit=${limit}`)
+
+export const getTVTopShows = (range = '7d', limit = 4) =>
+  apiFetch(`/tv/analytics/top-shows?range=${range}&limit=${limit}`)
+
+export const getTVStats = () =>
+  apiFetch('/tv/analytics/stats')
+
+export const getTVActivity = (limit = 10) =>
+  apiFetch(`/tv/analytics/activity?limit=${limit}`)
+
+export const getTVCharts = () =>
+  apiFetch('/tv/analytics/charts')
+
+export const getShowInfo = (showId, title = '') => {
+  const params = new URLSearchParams()
+  if (showId) params.set('show_id', showId)
+  if (title) params.set('title', title)
+  return apiFetch(`/tv/show/info?${params.toString()}`)
+}

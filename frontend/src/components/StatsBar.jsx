@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { getStats } from '../services/api'
+import { getStats, getTVStats } from '../services/api'
 
 function StatItem({ value, label, loading }) {
   return (
@@ -16,25 +16,35 @@ function StatItem({ value, label, loading }) {
   )
 }
 
-export default function StatsBar() {
+export default function StatsBar({ mode = 'movies' }) {
   const [stats, setStats] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      try {
-        const data = await getStats()
-        if (!cancelled) setStats(data)
-      } catch {
-        // silently fail — stats are supplementary
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
+    setLoading(true)
+    setStats(null)
+    const fetcher = mode === 'tv' ? getTVStats : getStats
+    fetcher()
+      .then(d => { if (!cancelled) setStats(d) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [mode])
+
+  if (mode === 'tv') {
+    return (
+      <div className="stats-bar">
+        <StatItem value={stats?.shows_added_this_year} label="Shows Added" loading={loading} />
+        <div className="stats-divider" />
+        <StatItem value={stats?.total_episodes_this_year} label="Episodes This Year" loading={loading} />
+        <div className="stats-divider" />
+        <StatItem value={stats?.total_hours_watched} label="Hours Watched" loading={loading} />
+        <div className="stats-divider" />
+        <StatItem value={stats?.active_users} label="Active Users" loading={loading} />
+      </div>
+    )
+  }
 
   return (
     <div className="stats-bar">

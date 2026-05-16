@@ -1,29 +1,30 @@
 import { useState, useEffect } from 'react'
 import MovieCard from './MovieCard'
 import MovieModal from './MovieModal'
-import { getRecentMovies } from '../services/api'
+import ShowCard from './ShowCard'
+import ShowModal from './ShowModal'
+import { getRecentMovies, getTVUserRecent } from '../services/api'
 
-export default function UserRow({ user }) {
-  const [movies, setMovies] = useState([])
+export default function UserRow({ user, mode = 'movies' }) {
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [selectedMovie, setSelectedMovie] = useState(null)
+  const [selectedItem, setSelectedItem] = useState(null)
 
   useEffect(() => {
     let cancelled = false
-    async function load() {
-      try {
-        const data = await getRecentMovies(user.id)
-        if (!cancelled) setMovies(data)
-      } catch (err) {
-        if (!cancelled) setError(err.message)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    load()
+    setLoading(true)
+    setItems([])
+    setError(null)
+    const fetcher = mode === 'tv'
+      ? () => getTVUserRecent(user.id, 4)
+      : () => getRecentMovies(user.id)
+    fetcher()
+      .then(d => { if (!cancelled) setItems(d) })
+      .catch(err => { if (!cancelled) setError(err.message) })
+      .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [user.id])
+  }, [user.id, mode])
 
   const initials = user.name
     .split(' ')
@@ -52,25 +53,37 @@ export default function UserRow({ user }) {
           <p className="error-message">Failed to load activity: {error}</p>
         )}
 
-        {!loading && !error && movies.length === 0 && (
+        {!loading && !error && items.length === 0 && (
           <p className="empty-state">No recent activity</p>
         )}
 
-        {!loading && !error && movies.length > 0 && (
-          <div className="movie-grid">
-            {movies.map((movie) => (
-              <MovieCard
-                key={`${movie.movie_id}-${movie.viewed_at}`}
-                movie={movie}
-                onDoubleClick={setSelectedMovie}
-              />
-            ))}
+        {!loading && !error && items.length > 0 && (
+          <div className={mode === 'tv' ? 'movie-grid' : 'movie-grid'}>
+            {mode === 'tv'
+              ? items.map((show) => (
+                  <ShowCard
+                    key={`${show.show_id}-${show.viewed_at}`}
+                    show={show}
+                    onDoubleClick={setSelectedItem}
+                  />
+                ))
+              : items.map((movie) => (
+                  <MovieCard
+                    key={`${movie.movie_id}-${movie.viewed_at}`}
+                    movie={movie}
+                    onDoubleClick={setSelectedItem}
+                  />
+                ))
+            }
           </div>
         )}
       </div>
 
-      {selectedMovie && (
-        <MovieModal movie={selectedMovie} onClose={() => setSelectedMovie(null)} />
+      {selectedItem && mode === 'tv' && (
+        <ShowModal show={selectedItem} onClose={() => setSelectedItem(null)} />
+      )}
+      {selectedItem && mode === 'movies' && (
+        <MovieModal movie={selectedItem} onClose={() => setSelectedItem(null)} />
       )}
     </>
   )

@@ -1,0 +1,21 @@
+services:
+  backend:
+    build: ./backend
+    image: plex-letterbox-backend
+    restart: unless-stopped
+    environment:
+      - PLEX_BASE_URL=${PLEX_BASE_URL}
+      - PLEX_TOKEN=${PLEX_TOKEN}
+      # CORS not needed in Docker — nginx proxies internally.
+      # Uncomment and set if you ever expose the backend directly:
+      # - CORS_ORIGINS=http://localhost
+    # No ports published — only reachable from the frontend container internally.
+
+  frontend:
+    build: ./frontend
+    image: plex-letterbox-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

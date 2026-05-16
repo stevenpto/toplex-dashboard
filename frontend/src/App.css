@@ -205,6 +205,40 @@ body {
   line-height: 1;
 }
 
+/* ─── View navigation toggle ─────────────────────────────────────────────── */
+.view-nav {
+  margin-left: auto;
+  display: flex;
+  gap: 3px;
+  background: var(--bg-secondary);
+  border-radius: 20px;
+  padding: 3px;
+}
+
+.view-nav-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-label);
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  padding: 5px 14px;
+  border-radius: 17px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.view-nav-btn:hover {
+  color: var(--text-primary);
+}
+
+.view-nav-btn.active {
+  background: var(--accent-green);
+  color: #fff;
+}
+
 /* ─── to/plex logo ───────────────────────────────────────────────────────── */
 .toplex-logo {
   font-family: 'DM Sans', system-ui, sans-serif;
@@ -255,13 +289,23 @@ body {
   gap: 12px;
 }
 
+.movie-grid--6 {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+@media (max-width: 800px) {
+  .movie-grid--6 { grid-template-columns: repeat(3, 1fr); }
+}
+
 @media (max-width: 640px) {
   .movie-grid { grid-template-columns: repeat(2, 1fr); }
+  .movie-grid--6 { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* ─── Movie card ─────────────────────────────────────────────────────────── */
 .movie-card {
   cursor: default;
+  min-width: 0;  /* prevent grid cell expansion from long nowrap titles */
 }
 
 .movie-card:hover .poster-wrapper {
@@ -1114,6 +1158,7 @@ body {
 /* ─── Movie card ─────────────────────────────────────────────────────────── */
 .movie-card {
   cursor: default;
+  min-width: 0;  /* prevent grid cell expansion from long nowrap titles */
   transition: transform 0.15s ease;
 }
 
