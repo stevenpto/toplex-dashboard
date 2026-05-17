@@ -554,18 +554,21 @@ async def get_top_shows(
             if dedup_key not in counts:
                 gp_key = getattr(item, "grandparentRatingKey", None)
                 show_id = str(gp_key) if gp_key else ""
+                # grandparentArt is available directly on history items
+                gp_art = getattr(item, "grandparentArt", None) or getattr(item, "art", None)
                 counts[dedup_key] = {
                     "show_id": show_id,
                     "title": getattr(item, "grandparentTitle", item.title),
                     "poster_path": getattr(item, "grandparentThumb", item.thumb),
-                    "art_path": None,
+                    "art_path": gp_art,
                     "count": 0,
                 }
             counts[dedup_key]["count"] += 1
 
         ranked = sorted(counts.values(), key=lambda x: x["count"], reverse=True)[:limit]
 
-        if ranked and ranked[0].get("show_id"):
+        # If art_path still missing, try fetching full show metadata via show_id
+        if ranked and not ranked[0].get("art_path") and ranked[0].get("show_id"):
             plex = _get_plex()
             try:
                 top_item = plex.fetchItem(int(ranked[0]["show_id"]))

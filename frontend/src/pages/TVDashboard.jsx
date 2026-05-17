@@ -32,7 +32,7 @@ export default function TVDashboard({ view, onSwitch }) {
 
   return (
     <div>
-      <HeroBanner movie={topShow} />
+      <HeroBanner movie={topShow} label="Most Popular This Month" />
       <StatsBar mode="tv" />
 
       <div className="app">

@@ -1,4 +1,4 @@
-export default function HeroBanner({ movie }) {
+export default function HeroBanner({ movie, label = 'Most Popular This Week' }) {
   if (!movie) return null
 
   const backdropUrl = movie.art_path
@@ -15,7 +15,7 @@ export default function HeroBanner({ movie }) {
       )}
       <div className="hero-fade" />
       <div className="hero-content">
-        <p className="hero-label">Most Popular This Week</p>
+        <p className="hero-label">{label}</p>
         <h2 className="hero-title">{movie.title}</h2>
         <p className="hero-meta">
           {movie.count} {movie.count === 1 ? 'watch' : 'watches'}
