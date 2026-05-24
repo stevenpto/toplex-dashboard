@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import TopMovies from '../components/TopMovies'
+import RecentMovies from '../components/RecentMovies'
 import UserRow from '../components/UserRow'
 import HeroBanner from '../components/HeroBanner'
 import StatsBar from '../components/StatsBar'
@@ -58,6 +59,7 @@ export default function Dashboard({ view, onSwitch }) {
         <div className="content-layout">
           <main className="content-main">
             <WatchChart />
+            <RecentMovies />
             <TopMovies onTopMovie={setTopMovie} />
 
             <section className="users-section">

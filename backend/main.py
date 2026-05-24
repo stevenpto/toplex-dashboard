@@ -197,6 +197,40 @@ async def get_top_movies(
     return result
 
 
+@app.get("/analytics/recently-added")
+async def get_recently_added(limit: int = 4):
+    cache_key = f"recently_added:{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    def _fetch() -> list:
+        plex = _get_plex()
+        movies = []
+        for section in plex.library.sections():
+            if section.type == "movie":
+                try:
+                    for movie in section.recentlyAdded(maxresults=limit):
+                        movies.append({
+                            "movie_id": str(movie.ratingKey),
+                            "title": movie.title,
+                            "poster_path": getattr(movie, "thumb", None),
+                            "added_at": getattr(movie, "addedAt", None).isoformat() if getattr(movie, "addedAt", None) else None,
+                            "year": getattr(movie, "year", None),
+                        })
+                except Exception:
+                    pass
+        movies.sort(key=lambda x: x["added_at"] or "", reverse=True)
+        return movies[:limit]
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set(cache_key, result)
+    return result
+
+
 @app.get("/analytics/stats")
 async def get_stats():
     cached = _cache_get("stats")
@@ -582,6 +616,40 @@ async def get_top_shows(
         result = await asyncio.to_thread(_fetch)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    return result
+
+
+@app.get("/tv/analytics/recently-added")
+async def get_tv_recently_added(limit: int = 4):
+    cache_key = f"tv_recently_added:{limit}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    def _fetch() -> list:
+        plex = _get_plex()
+        shows = []
+        for section in plex.library.sections():
+            if section.type == "show":
+                try:
+                    for show in section.recentlyAdded(maxresults=limit):
+                        shows.append({
+                            "show_id": str(show.ratingKey),
+                            "title": show.title,
+                            "poster_path": getattr(show, "thumb", None),
+                            "added_at": getattr(show, "addedAt", None).isoformat() if getattr(show, "addedAt", None) else None,
+                            "year": getattr(show, "year", None),
+                        })
+                except Exception:
+                    pass
+        shows.sort(key=lambda x: x["added_at"] or "", reverse=True)
+        return shows[:limit]
+
+    try:
+        result = await asyncio.to_thread(_fetch)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+    _cache_set(cache_key, result)
     return result
 
 

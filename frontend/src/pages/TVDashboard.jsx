@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import TopShows from '../components/TopShows'
+import RecentShows from '../components/RecentShows'
 import UserRow from '../components/UserRow'
 import HeroBanner from '../components/HeroBanner'
 import StatsBar from '../components/StatsBar'
@@ -58,6 +59,7 @@ export default function TVDashboard({ view, onSwitch }) {
         <div className="content-layout">
           <main className="content-main">
             <WatchChart mode="tv" />
+            <RecentShows />
             <TopShows onTopShow={setTopShow} />
 
             <section className="users-section">

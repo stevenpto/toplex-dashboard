@@ -18,6 +18,9 @@ export const getRecentMovies = (userId, limit = 4) =>
 export const getTopMovies = (range = '7d', limit = 4) =>
   apiFetch(`/analytics/top-movies?range=${range}&limit=${limit}`)
 
+export const getRecentlyAddedMovies = (limit = 4) =>
+  apiFetch(`/analytics/recently-added?limit=${limit}`)
+
 export const getStats = () =>
   apiFetch('/analytics/stats')
 
@@ -38,6 +41,9 @@ export const getTVUserRecent = (userId, limit = 4) =>
 
 export const getTVTopShows = (range = '7d', limit = 4) =>
   apiFetch(`/tv/analytics/top-shows?range=${range}&limit=${limit}`)
+
+export const getTVRecentlyAdded = (limit = 4) =>
+  apiFetch(`/tv/analytics/recently-added?limit=${limit}`)
 
 export const getTVStats = () =>
   apiFetch('/tv/analytics/stats')
